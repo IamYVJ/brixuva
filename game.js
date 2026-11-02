@@ -54,30 +54,42 @@ const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); }
 const totals = () => { const v = Object.values(save.best); return { best: Math.max(0, ...v), total: v.reduce((a, b) => a + b, 0) }; };
 
 /* ---------- world ---------- */
-const W = 400, H = 600, COLS = 8, BW = 44, BH = 20, GAP = 4, MX = 10, TOP = 40;
-const PY = H - 40, PH = 10, BR = 7;
+const W = 400, COLS = 8, BW = 44, BH = 20, GAP = 4, MX = 10, TOP = 40;
+const PH = 10, BR = 7;
+let H = 600, PY = H - 40; // world height adapts to the screen (see resize)
 const PW = 84, PW_WIDE = 132, DROP_CHANCE = 0.2, MAX_LIVES = 5, MAX_BALLS = 6;
 const POWERS = {
   W: { name: 'Wide', timed: 12 },
   S: { name: 'Slow', timed: 10 },
+  Z: { name: 'Laser', timed: 10 },
+  T: { name: 'Sticky', timed: 12 },
+  F: { name: 'Fire', timed: 8 },
   M: { name: 'Multi' },
   L: { name: 'Life' },
 };
-const POWER_KEYS = 'WWSSMML';
+const POWER_KEYS = 'WWSSMMLZTF';
+const FX_KEYS = ['W', 'S', 'Z', 'T', 'F'];
+const freshFx = () => ({ W: 0, S: 0, Z: 0, T: 0, F: 0 });
 const cv = $('c'), ctx = cv.getContext('2d');
 let scale = 1, ox = 0, oy = 0, dpr = 1;
 function resize() {
   dpr = window.devicePixelRatio || 1;
   const r = cv.getBoundingClientRect();
+  if (!r.width || !r.height) return;
   cv.width = r.width * dpr; cv.height = r.height * dpr;
+  // keep width fixed and stretch the world height to the screen shape, within sane limits
+  H = Math.max(480, Math.min(800, Math.round(r.height * W / r.width)));
   scale = Math.min(r.width / W, r.height / H);
   ox = (r.width - W * scale) / 2; oy = (r.height - H * scale) / 2;
+  PY = H - 40;
+  for (const b of balls) if (!b.stuck) b.y = Math.min(b.y, PY - 20);
+  for (const d of drops) d.y = Math.min(d.y, PY - 30);
 }
-addEventListener('resize', resize);
+new ResizeObserver(resize).observe(cv);
 
 let level = 1, score = 0, lives = 3, bricks = [], state = 'menu';
 let paddle = { x: W / 2, w: PW }, balls = [];
-let drops = [], fx = { W: 0, S: 0 };
+let drops = [], bullets = [], laserCd = 0, fx = freshFx();
 let particles = [], keys = {}, shake = 0;
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -90,17 +102,20 @@ function load(n) {
     const solid = ch === '#';
     bricks.push({ x: MX + c * (BW + GAP), y: TOP + r * (BH + GAP), hp: solid ? 99 : +ch, max: solid ? 99 : +ch, solid });
   }));
-  score = 0; lives = 3; paddle.x = W / 2; paddle.w = PW; particles = []; drops = []; fx = { W: 0, S: 0 };
+  score = 0; lives = 3; paddle.x = W / 2; paddle.w = PW; particles = []; drops = []; bullets = []; fx = freshFx();
   resetBall(); hud(); show(null); state = 'ready'; $('hint').classList.remove('hide');
 }
 const newBall = () => ({ x: paddle.x, y: PY - BR - 1, vx: 0, vy: 0, stuck: true });
-function resetBall() { balls = [newBall()]; fx = { W: 0, S: 0 }; }
+function resetBall() { balls = [newBall()]; fx = freshFx(); }
 function launch() {
   if (state === 'ready') { state = 'play'; $('hint').classList.add('hide'); }
   for (const b of balls) {
     if (!b.stuck) continue;
-    const sp = speed(), a = (-90 + (Math.random() * 30 - 15)) * Math.PI / 180;
-    b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp; b.stuck = false;
+    const sp = speed();
+    // a ball caught by the sticky paddle leaves at the angle of where it landed
+    const t = b.off === undefined ? 0 : Math.max(-1, Math.min(1, b.off / (paddle.w / 2)));
+    const a = (b.off === undefined ? -90 + (Math.random() * 30 - 15) : -90 + t * 62) * Math.PI / 180;
+    b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp; b.stuck = false; delete b.off;
   }
 }
 const speed = () => (330 + level * 12) * (fx.S > 0 ? 0.75 : 1);
@@ -122,8 +137,7 @@ function burst(x, y, n, col) {
 
 /* ---------- power-ups ---------- */
 function applyPower(t) {
-  if (t === 'W') fx.W = POWERS.W.timed;
-  else if (t === 'S') fx.S = POWERS.S.timed;
+  if (POWERS[t].timed) fx[t] = POWERS[t].timed;
   else if (t === 'L') { lives = Math.min(MAX_LIVES, lives + 1); hud(); }
   else if (t === 'M') {
     const src = balls.filter(b => !b.stuck);
@@ -140,7 +154,9 @@ function applyPower(t) {
 function step(dt) {
   const k = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
   if (k) paddle.x += k * 460 * dt;
-  for (const t of ['W', 'S']) fx[t] = Math.max(0, fx[t] - dt);
+  const wasSticky = fx.T > 0;
+  for (const t of FX_KEYS) fx[t] = Math.max(0, fx[t] - dt);
+  if (wasSticky && fx.T <= 0 && state === 'play') launch(); // let go of anything still held
   paddle.w += ((fx.W > 0 ? PW_WIDE : PW) - paddle.w) * Math.min(1, dt * 10);
   paddle.x = Math.max(paddle.w / 2, Math.min(W - paddle.w / 2, paddle.x));
 
@@ -153,9 +169,28 @@ function step(dt) {
   }
   drops = drops.filter(d => !d.done && d.y < H + 20);
 
+  // laser bolts
+  if (fx.Z > 0 && state === 'play') {
+    laserCd -= dt;
+    if (laserCd <= 0) {
+      laserCd = 0.35;
+      for (const side of [-1, 1]) bullets.push({ x: paddle.x + side * (paddle.w / 2 - 8), y: PY });
+    }
+  }
+  for (const bl of bullets) {
+    bl.y -= 540 * dt;
+    for (const b of bricks) {
+      if (b.hp <= 0 || bl.x < b.x || bl.x > b.x + BW || bl.y > b.y + BH || bl.y < b.y) continue;
+      bl.dead = true;
+      if (!b.solid) hitBrick(b, 1);
+      break;
+    }
+  }
+  bullets = bullets.filter(bl => !bl.dead && bl.y > -10);
+
   const target = speed();
   for (const ball of balls) {
-    if (ball.stuck) { ball.x = paddle.x; ball.y = PY - BR - 1; continue; }
+    if (ball.stuck) { ball.x = paddle.x + (ball.off || 0); ball.y = PY - BR - 1; continue; }
     const cur = Math.hypot(ball.vx, ball.vy);
     if (Math.abs(cur - target) > 1) { const f = 1 + (target / cur - 1) * Math.min(1, dt * 8); ball.vx *= f; ball.vy *= f; }
     stepBall(ball, dt);
@@ -167,6 +202,15 @@ function step(dt) {
     if (lives <= 0) return lose();
     resetBall();
   }
+}
+
+function hitBrick(b, dmg) {
+  b.hp -= dmg; score += 10 * b.max; shake = 2;
+  if (b.hp <= 0) {
+    burst(b.x + BW / 2, b.y + BH / 2, 8, css('--fg'));
+    if (Math.random() < DROP_CHANCE) drops.push({ x: b.x + BW / 2, y: b.y + BH / 2, t: POWER_KEYS[Math.floor(Math.random() * POWER_KEYS.length)] });
+  }
+  hud();
 }
 
 function stepBall(ball, dt) {
@@ -183,6 +227,10 @@ function stepBall(ball, dt) {
       const t = Math.max(-1, Math.min(1, (ball.x - paddle.x) / (paddle.w / 2)));
       const a = (-90 + t * 62) * Math.PI / 180, sp = speed();
       ball.vx = Math.cos(a) * sp; ball.vy = Math.sin(a) * sp; ball.y = PY - BR;
+      if (fx.T > 0) { // sticky: hold the ball where it landed
+        ball.stuck = true; ball.off = ball.x - paddle.x; ball.vx = ball.vy = 0; ball.y = PY - BR - 1;
+        return;
+      }
     }
     // bricks
     for (const b of bricks) {
@@ -190,16 +238,10 @@ function stepBall(ball, dt) {
       const cx = Math.max(b.x, Math.min(ball.x, b.x + BW)), cy = Math.max(b.y, Math.min(ball.y, b.y + BH));
       const dx = ball.x - cx, dy = ball.y - cy;
       if (dx * dx + dy * dy > BR * BR) continue;
+      if (fx.F > 0 && !b.solid) { hitBrick(b, b.hp); continue; } // fireball: smash straight through
       if (Math.abs(dx) > Math.abs(dy)) { ball.vx = dx > 0 ? Math.abs(ball.vx) : -Math.abs(ball.vx); ball.x += dx > 0 ? 1 : -1; }
       else { ball.vy = dy > 0 ? Math.abs(ball.vy) : -Math.abs(ball.vy); ball.y += dy > 0 ? 1 : -1; }
-      if (!b.solid) {
-        b.hp--; score += 10 * b.max; shake = 2;
-        if (b.hp <= 0) {
-          burst(b.x + BW / 2, b.y + BH / 2, 8, css('--fg'));
-          if (Math.random() < DROP_CHANCE) drops.push({ x: b.x + BW / 2, y: b.y + BH / 2, t: POWER_KEYS[Math.floor(Math.random() * POWER_KEYS.length)] });
-        }
-        hud();
-      }
+      if (!b.solid) hitBrick(b, 1);
       break;
     }
   }
@@ -249,14 +291,20 @@ function draw() {
     ctx.fillStyle = ac; rr(d.x - 14, d.y - 9, 28, 18, 9); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = '600 11px "Helvetica Neue",system-ui,sans-serif'; ctx.fillText(d.t, d.x, d.y + 1);
   }
+  ctx.fillStyle = ac;
+  for (const bl of bullets) { rr(bl.x - 1.5, bl.y - 6, 3, 12, 1.5); ctx.fill(); }
   ctx.fillStyle = fg; rr(paddle.x - paddle.w / 2, PY, paddle.w, PH, 5); ctx.fill();
   ctx.fillStyle = ac;
+  if (fx.T > 0) { rr(paddle.x - paddle.w / 2 + 6, PY, paddle.w - 12, 3, 1.5); ctx.fill(); }
+  if (fx.Z > 0) for (const side of [-1, 1]) { rr(paddle.x + side * (paddle.w / 2 - 8) - 2, PY - 4, 4, 6, 1); ctx.fill(); }
+  if (fx.F > 0) { ctx.shadowColor = ac; ctx.shadowBlur = 16; }
   for (const ball of balls) { ctx.beginPath(); ctx.arc(ball.x, ball.y, BR, 0, 6.283); ctx.fill(); }
+  ctx.shadowBlur = 0;
 
   // active effects
   ctx.textAlign = 'left'; ctx.fillStyle = dim; ctx.font = '600 10px "Helvetica Neue",system-ui,sans-serif';
   let ty = H - 10;
-  for (const t of ['W', 'S']) if (fx[t] > 0) { ctx.fillText((POWERS[t].name + ' ' + Math.ceil(fx[t]) + 's').toUpperCase(), 6, ty); ty -= 14; }
+  for (const t of FX_KEYS) if (fx[t] > 0) { ctx.fillText((POWERS[t].name + ' ' + Math.ceil(fx[t]) + 's').toUpperCase(), 6, ty); ty -= 14; }
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
 
