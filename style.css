@@ -1,5 +1,7 @@
-:root{--bg:#0e0e10;--fg:#f4f1ea;--dim:#8a877f;--line:#26262a;--accent:#ff5a36}
-@media (prefers-color-scheme:light){:root{--bg:#f4f1ea;--fg:#141416;--dim:#7b776e;--line:#dcd8cd}}
+:root{--bg:#0e0e10;--fg:#f4f1ea;--dim:#8a877f;--line:#26262a;--accent:#ff5a36;color-scheme:dark}
+@media (prefers-color-scheme:light){:root:not([data-theme]){--bg:#f4f1ea;--fg:#141416;--dim:#7b776e;--line:#dcd8cd;color-scheme:light}}
+:root[data-theme=light]{--bg:#f4f1ea;--fg:#141416;--dim:#7b776e;--line:#dcd8cd;color-scheme:light}
+:root[data-theme=dark]{--bg:#0e0e10;--fg:#f4f1ea;--dim:#8a877f;--line:#26262a;color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;
   font-family:"Helvetica Neue",Inter,system-ui,-apple-system,"Segoe UI",sans-serif;touch-action:none}
@@ -13,7 +15,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hid
 #stage{position:relative;flex:1;min-height:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-  background:color-mix(in srgb,var(--bg) 92%,transparent);text-align:center;padding:24px;z-index:3}
+  background:var(--bg);text-align:center;padding:24px;z-index:3}
 .screen.show{display:flex}
 h1{font-size:clamp(52px,16vw,84px);font-weight:200;letter-spacing:-.06em;margin:0}
 h1::after{content:".";color:var(--accent)}
@@ -34,12 +36,13 @@ button.primary:hover{background:var(--accent);border-color:var(--accent);color:#
 #grid button small{font-size:9px;letter-spacing:.08em;color:var(--dim);font-weight:500}
 #grid button:disabled{opacity:.25;cursor:default}
 #grid button.cur{border-color:var(--accent)}
-#hint{position:absolute;bottom:10%;left:0;right:0;text-align:center;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);pointer-events:none;transition:opacity .3s}
+#hint{position:absolute;top:55%;left:0;right:0;text-align:center;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);pointer-events:none;transition:opacity .3s}
 #hint.hide{opacity:0}
 #hint b{display:block;color:var(--fg);font-size:13px;letter-spacing:.26em;margin-bottom:8px}
-#btnMute{position:absolute;top:8px;right:48px;min-width:0;padding:6px 12px;font-size:14px;letter-spacing:0;z-index:4;border:none;color:var(--dim)}
+#tools{position:absolute;top:6px;right:6px;display:flex;z-index:4}
+#tools button{min-width:0;padding:6px 10px;font-size:14px;letter-spacing:0;border:none;color:var(--dim)}
 #btnMute.off{text-decoration:line-through;opacity:.45}
-#btnPause{position:absolute;top:8px;right:8px;min-width:0;padding:6px 12px;font-size:10px;letter-spacing:.1em;z-index:2;border:none;color:var(--dim)}
+#btnPause{font-size:10px!important;letter-spacing:.1em!important}
 #ver{text-align:center;font-size:10px;letter-spacing:.14em;color:var(--dim);padding:8px 0;opacity:.6}
 
 /* small phones */
@@ -57,3 +60,7 @@ button.primary:hover{background:var(--accent);border-color:var(--accent);color:#
   #grid{grid-template-columns:repeat(10,1fr);max-width:640px;gap:6px;margin-bottom:6px}
   #grid button{font-size:16px;border-radius:10px}#grid button small{display:none}
 }
+
+.stars{font-size:30px;letter-spacing:.22em;color:var(--accent);margin:0;min-height:1em}
+#grid button small.st{color:var(--accent);letter-spacing:.04em;font-size:10px}
+@media (orientation:landscape) and (max-height:600px){.stars{font-size:22px}#grid button small.st{display:none}}

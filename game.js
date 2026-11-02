@@ -93,10 +93,52 @@ const EXTRA = [
   { name: 'Final Hour', descend: 2.5,
     rows: ['4#4444#4', '3e3333e3', '2.2222.2', '1.1ee1.1', '1.1111.1'] },
 ];
-const LEVELS = CLASSIC.map((rows, i) => ({ name: NAMES[i], rows })).concat(EXTRA);
+const EXTRA2 = [
+  { name: 'Ripple', wave: { amp: 14, speed: 2 },
+    rows: ['11111111', '22222222', '11111111'] },
+  { name: 'Sea', cols: 10, wave: { amp: 16, speed: 2.4 },
+    rows: ['2222222222', '1111111111', '2222222222', '1111111111'] },
+  { name: 'Sine', wave: { amp: 10, speed: 2 }, slide: { rows: [1], amp: 40, speed: 1.2 },
+    rows: ['.111111.', '.222222.', '.111111.'] },
+  { name: 'Smile', cols: 10,
+    rows: ['..333333..', '.3......3.', '3..2..2..3', '3........3', '3.2....2.3', '3..2222..3', '.3......3.', '..333333..'] },
+  { name: 'Cross', cols: 9,
+    rows: ['...222...', '...222...', '222444222', '222444222', '...222...', '...222...'] },
+  { name: 'Diamond', cols: 10,
+    rows: ['....11....', '...2222...', '..223322..', '.22344322.', '..223322..', '...2222...', '....11....'] },
+  { name: 'Waffle',
+    rows: ['#2#2#2#2', '2#2#2#2#', '2222.222', '2#2#2#2#'] },
+  { name: 'Spires', cols: 10, descend: 2,
+    rows: ['3.3.3.3.3.', '2.2.2.2.2.', '2.2.2.2.2.', '1.1.1.1.1.'] },
+  { name: 'Rain', cols: 10, descend: 2.5, wave: { amp: 10, speed: 3 },
+    rows: ['1.1.1.1.1.', '.1.1.1.1.1', '1.1.1.1.1.'] },
+  { name: 'Pulse', slide: { rows: [0, 2], amp: 40, speed: 1.5 },
+    rows: ['..e11e..', '.222222.', '..e11e..'] },
+  { name: 'Minefield', cols: 10,
+    rows: ['2222222222', '2e22e22e22', '2222222222', '22e22e22e2'] },
+  { name: 'Bridge',
+    rows: ['4......4', '4......4', '44444444', '.222222.', '..1111..'] },
+  { name: 'Blocks',
+    rows: ['11..22..', '11..22..', '..33..44', '..33..44', '11..22..', '11..22..'] },
+  { name: 'Cathedral', cols: 10,
+    rows: ['....44....', '...2222...', '..222222..', '.22#22#22.', '.22#22#22.', '.22#22#22.'] },
+  { name: 'Wind', cols: 10, slide: { rows: [0, 1, 2, 3], amp: 60, speed: 1.2 },
+    rows: ['..222222..', '..111111..', '..222222..', '..111111..'] },
+  { name: 'Honeycomb', cols: 10, wave: { amp: 8, speed: 2 },
+    rows: ['2.2.2.2.2.', '.2.2.2.2.2', '2.2.2.2.2.', '.2.2.2.2.2', '2.2.2.2.2.'] },
+  { name: 'Scatter', cols: 10,
+    rows: ['1..2..3..1', '..3..1..2.', '2..1..2..3', '.1..3..1..'] },
+  { name: 'Teeth',
+    rows: ['33333333', '3#3#3#3#', '33333333'] },
+  { name: 'Undertow', descend: 3, wave: { amp: 12, speed: 2.2 },
+    rows: ['22222222', '2e2222e2', '22222222'] },
+  { name: 'Grand Finale', cols: 10, descend: 2, wave: { amp: 6, speed: 2 },
+    rows: ['4#444444#4', '3e333333e3', '2.222222.2', '1.1eeee1.1', '1.111111.1'] },
+];
+const LEVELS = CLASSIC.map((rows, i) => ({ name: NAMES[i], rows })).concat(EXTRA, EXTRA2);
 
 /* ---------- save ---------- */
-let save = { unlocked: 1, best: {}, lastLevel: 1 };
+let save = { unlocked: 1, best: {}, stars: {}, lastLevel: 1 };
 try { Object.assign(save, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) {}
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {} };
 
@@ -168,25 +210,28 @@ function resize() {
   PY = H - 40;
   for (const b of balls) if (!b.stuck) b.y = Math.min(b.y, PY - 20);
   for (const d of drops) d.y = Math.min(d.y, PY - 30);
+  $('hint').style.top = Math.round(oy + (PY - 125) * scale) + 'px'; // sits in the empty space above the paddle
 }
 new ResizeObserver(resize).observe(cv);
 
 let level = 1, score = 0, lives = 3, bricks = [], state = 'menu';
 let paddle = { x: W / 2, w: PW }, balls = [];
 let drops = [], bullets = [], laserCd = 0, fx = freshFx();
-let particles = [], keys = {}, shake = 0, cur = LEVELS[0], T = 0;
+let particles = [], keys = {}, shake = 0, cur = LEVELS[0], T = 0, descent = 0, playT = 0, par = 60;
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
 function load(n) {
   level = n; save.lastLevel = n; persist();
-  bricks = []; cur = LEVELS[n - 1]; T = 0;
+  bricks = []; cur = LEVELS[n - 1]; T = 0; descent = 0; playT = 0;
   const cols = cur.cols || 8, bw = (W - 2 * MX - (cols - 1) * GAP) / cols;
   cur.rows.forEach((row, r) => [...row].forEach((ch, c) => {
     if (ch === '.') return;
     const solid = ch === '#', boom = ch === 'e', hp = solid ? 99 : boom ? 1 : +ch, x = MX + c * (bw + GAP);
-    bricks.push({ x, x0: x, y: TOP + r * (BH + GAP), row: r, w: bw, hp, max: hp, solid, boom });
+    const y = TOP + r * (BH + GAP);
+    bricks.push({ x, x0: x, y, y0: y, row: r, col: c, w: bw, hp, max: hp, solid, boom });
   }));
+  par = bricks.reduce((a, b) => a + (b.solid ? 0 : b.hp), 0) * 1.1 + 10;
   score = 0; lives = 3; paddle.x = W / 2; paddle.w = PW; particles = []; drops = []; bullets = []; fx = freshFx();
   resetBall(); hud(); show(null); state = 'ready';
   $('hint').innerHTML = '<b>' + cur.name + '</b>Tap or press space to launch'; $('hint').classList.remove('hide');
@@ -246,9 +291,10 @@ function step(dt) {
       b.x = Math.max(MX, Math.min(W - MX - b.w, b.x0 + Math.sin(T * cur.slide.speed + b.row * Math.PI) * cur.slide.amp));
     }
   }
-  if (cur.descend && state === 'play') {
-    for (const b of bricks) b.y += cur.descend * dt;
-    if (bricks.some(b => b.hp > 0 && b.y + BH >= PY - 20)) { lives = 0; hud(); return lose(); }
+  if (state === 'play') { playT += dt; if (cur.descend) descent += cur.descend * dt; }
+  if (cur.descend || cur.wave) {
+    for (const b of bricks) b.y = b.y0 + descent + (cur.wave ? Math.sin(T * cur.wave.speed + b.col * 0.8) * cur.wave.amp : 0);
+    if (cur.descend && bricks.some(b => b.hp > 0 && b.y + BH >= PY - 20)) { lives = 0; hud(); return lose(); }
   }
   const k = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
   if (k) paddle.x += k * 460 * dt;
@@ -364,15 +410,20 @@ function win() {
   sfx.win();
   score += lives * 100;
   const prev = save.best[level] || 0;
+  const stars = 1 + (lives >= 2 ? 1 : 0) + (playT <= par ? 1 : 0);
+  if (stars > (save.stars[level] || 0)) save.stars[level] = stars;
   if (score > prev) save.best[level] = score;
   if (level < LEVELS.length) save.unlocked = Math.max(save.unlocked, level + 1);
   persist(); hud();
   const last = level === LEVELS.length;
-  end(last ? 'Complete' : 'Cleared', score > prev ? 'New best' : 'Best ' + prev, last ? 'Replay' : 'Next level');
+  const m = Math.floor(playT / 60), sec = String(Math.floor(playT % 60)).padStart(2, '0');
+  end(last ? 'Complete' : 'Cleared', (score > prev ? 'New best' : 'Best ' + prev) + ' · ' + m + ':' + sec, last ? 'Replay' : 'Next level');
+  $('oStars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
   $('btnNext').dataset.go = last ? level : level + 1;
 }
 function lose() {
   sfx.over();
+  $('oStars').textContent = '';
   end('Game over', 'Level ' + level, 'Retry');
   $('btnNext').dataset.go = level;
 }
@@ -417,8 +468,8 @@ function draw() {
 
   // active effects
   ctx.textAlign = 'left'; ctx.fillStyle = dim; ctx.font = '600 10px "Helvetica Neue",system-ui,sans-serif';
-  let ty = H - 10;
-  for (const t of FX_KEYS) if (fx[t] > 0) { ctx.fillText((POWERS[t].name + ' ' + Math.ceil(fx[t]) + 's').toUpperCase(), 6, ty); ty -= 14; }
+  let ty = 14;
+  for (const t of FX_KEYS) if (fx[t] > 0) { ctx.fillText((POWERS[t].name + ' ' + Math.ceil(fx[t]) + 's').toUpperCase(), 6, ty); ty += 13; }
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
 
@@ -453,6 +504,18 @@ function pause() {
   else if (state === 'paused') { state = 'play'; $('btnPause').textContent = 'II'; }
 }
 $('btnPause').onclick = pause;
+const darkMq = matchMedia('(prefers-color-scheme: dark)');
+const theme = () => document.documentElement.dataset.theme || (darkMq.matches ? 'dark' : 'light');
+function paintTheme() {
+  $('btnTheme').textContent = theme() === 'dark' ? '☀' : '☾';
+  const m = document.querySelector('meta[name=theme-color]');
+  if (m) m.content = css('--bg');
+}
+$('btnTheme').onclick = () => {
+  const next = theme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next; save.theme = next; persist(); paintTheme();
+};
+darkMq.addEventListener && darkMq.addEventListener('change', paintTheme);
 function toggleMute() {
   sfx.setMuted(!sfx.muted); paintMute();
   if (!sfx.muted) sfx.launch();
@@ -467,6 +530,7 @@ addEventListener('pointerdown', () => sfx.unlock());
 function menu() {
   state = 'menu'; const t = totals();
   $('mBest').textContent = t.best; $('mTotal').textContent = t.total;
+  $('mStars').textContent = Object.values(save.stars).reduce((a, b) => a + b, 0) + '/' + LEVELS.length * 3;
   $('btnPlay').textContent = save.best[1] || save.unlocked > 1 ? 'Continue' : 'Play';
   show('menu');
 }
@@ -474,7 +538,8 @@ function levels() {
   const g = $('grid'); g.innerHTML = '';
   LEVELS.forEach((_, i) => {
     const n = i + 1, b = document.createElement('button');
-    b.innerHTML = n + '<small>' + (save.best[n] || '—') + '</small>';
+    const st = save.stars[n];
+    b.innerHTML = n + (st ? '<small class="st">' + '★'.repeat(st) + '☆'.repeat(3 - st) : '<small>—') + '</small>';
     b.disabled = n > save.unlocked; if (n === save.unlocked) b.className = 'cur';
     b.onclick = () => load(n); g.appendChild(b);
   });
@@ -486,5 +551,5 @@ $('btnBack').onclick = menu;
 $('btnMenu').onclick = menu;
 $('btnNext').onclick = () => load(+$('btnNext').dataset.go);
 
-paintMute(); resize(); menu(); requestAnimationFrame(frame);
+paintMute(); paintTheme(); resize(); menu(); requestAnimationFrame(frame);
 })();
