@@ -37,6 +37,14 @@ const LEVELS = [
   ['33....33','23....32','12.##.21','.12..21.','..1221..','...11...'],
   ['#2222222','1#333331','11#44411','111#2111','1111#111','11111#11'],
   ['33333333','3#.##.#3','3.2222.3','3.2##2.3','3.2222.3','3#.##.#3','33333333'],
+  ['#.####.#','22222222','........','33333333','........','11111111'],
+  ['.22..22.','23322332','23333332','.233332.','..2332..','...22...'],
+  ['1#1#1#1#','22222222','3#3#3#3#','22222222','1#1#1#1#'],
+  ['44444444','4......4','4.3333.4','4.3..3.4','4.3333.4','4......4','44444444'],
+  ['..2..2..','...22...','..2222..','.22.22.2','22222222','2.2222.2','2.2..2.2','...22...'],
+  ['4#....#4','3#2222#3','3#2##2#3','3#2..2#3','3#2222#3','4#....#4'],
+  ['44444444','3#3333#3','33#33#33','333##333','33#33#33','3#3333#3','44444444'],
+  ['44444444','4#3333#4','43222234','43211234','43222234','4#3333#4','44444444'],
 ];
 
 /* ---------- save ---------- */
@@ -48,6 +56,14 @@ const totals = () => { const v = Object.values(save.best); return { best: Math.m
 /* ---------- world ---------- */
 const W = 400, H = 600, COLS = 8, BW = 44, BH = 20, GAP = 4, MX = 10, TOP = 40;
 const PY = H - 40, PH = 10, BR = 7;
+const PW = 84, PW_WIDE = 132, DROP_CHANCE = 0.2, MAX_LIVES = 5, MAX_BALLS = 6;
+const POWERS = {
+  W: { name: 'Wide', timed: 12 },
+  S: { name: 'Slow', timed: 10 },
+  M: { name: 'Multi' },
+  L: { name: 'Life' },
+};
+const POWER_KEYS = 'WWSSMML';
 const cv = $('c'), ctx = cv.getContext('2d');
 let scale = 1, ox = 0, oy = 0, dpr = 1;
 function resize() {
@@ -60,7 +76,8 @@ function resize() {
 addEventListener('resize', resize);
 
 let level = 1, score = 0, lives = 3, bricks = [], state = 'menu';
-let paddle = { x: W / 2, w: 84 }, ball = { x: 0, y: 0, vx: 0, vy: 0, stuck: true };
+let paddle = { x: W / 2, w: PW }, balls = [];
+let drops = [], fx = { W: 0, S: 0 };
 let particles = [], keys = {}, shake = 0;
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -73,23 +90,27 @@ function load(n) {
     const solid = ch === '#';
     bricks.push({ x: MX + c * (BW + GAP), y: TOP + r * (BH + GAP), hp: solid ? 99 : +ch, max: solid ? 99 : +ch, solid });
   }));
-  score = 0; lives = 3; paddle.x = W / 2; particles = [];
+  score = 0; lives = 3; paddle.x = W / 2; paddle.w = PW; particles = []; drops = []; fx = { W: 0, S: 0 };
   resetBall(); hud(); show(null); state = 'ready'; $('hint').classList.remove('hide');
 }
-function resetBall() { ball = { x: paddle.x, y: PY - BR - 1, vx: 0, vy: 0, stuck: true }; }
+const newBall = () => ({ x: paddle.x, y: PY - BR - 1, vx: 0, vy: 0, stuck: true });
+function resetBall() { balls = [newBall()]; fx = { W: 0, S: 0 }; }
 function launch() {
   if (state === 'ready') { state = 'play'; $('hint').classList.add('hide'); }
-  if (!ball.stuck) return;
-  const sp = speed(), a = (-90 + (Math.random() * 30 - 15)) * Math.PI / 180;
-  ball.vx = Math.cos(a) * sp; ball.vy = Math.sin(a) * sp; ball.stuck = false;
+  for (const b of balls) {
+    if (!b.stuck) continue;
+    const sp = speed(), a = (-90 + (Math.random() * 30 - 15)) * Math.PI / 180;
+    b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp; b.stuck = false;
+  }
 }
-const speed = () => 330 + level * 14;
+const speed = () => (330 + level * 12) * (fx.S > 0 ? 0.75 : 1);
 
 function hud() {
   $('hLevel').textContent = level; $('hScore').textContent = score;
   $('hLives').textContent = '•'.repeat(Math.max(lives, 0)) || '–';
 }
 function show(id) {
+  if (id) $('hint').classList.add('hide');
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('show', s.id === id);
 }
 function burst(x, y, n, col) {
@@ -99,13 +120,56 @@ function burst(x, y, n, col) {
   }
 }
 
+/* ---------- power-ups ---------- */
+function applyPower(t) {
+  if (t === 'W') fx.W = POWERS.W.timed;
+  else if (t === 'S') fx.S = POWERS.S.timed;
+  else if (t === 'L') { lives = Math.min(MAX_LIVES, lives + 1); hud(); }
+  else if (t === 'M') {
+    const src = balls.filter(b => !b.stuck);
+    for (const b of src) for (const rot of [-0.35, 0.35]) {
+      if (balls.length >= MAX_BALLS) break;
+      const c = Math.cos(rot), s = Math.sin(rot);
+      balls.push({ x: b.x, y: b.y, vx: b.vx * c - b.vy * s, vy: b.vx * s + b.vy * c, stuck: false });
+    }
+  }
+  score += 50; hud();
+}
+
 /* ---------- update ---------- */
 function step(dt) {
   const k = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
   if (k) paddle.x += k * 460 * dt;
+  for (const t of ['W', 'S']) fx[t] = Math.max(0, fx[t] - dt);
+  paddle.w += ((fx.W > 0 ? PW_WIDE : PW) - paddle.w) * Math.min(1, dt * 10);
   paddle.x = Math.max(paddle.w / 2, Math.min(W - paddle.w / 2, paddle.x));
-  if (ball.stuck) { ball.x = paddle.x; ball.y = PY - BR - 1; return; }
 
+  // falling capsules
+  for (const d of drops) {
+    d.y += 120 * dt;
+    if (!d.done && d.y + 9 >= PY && d.y - 9 <= PY + PH && Math.abs(d.x - paddle.x) <= paddle.w / 2 + 14) {
+      d.done = true; applyPower(d.t); burst(d.x, d.y, 10, css('--accent'));
+    }
+  }
+  drops = drops.filter(d => !d.done && d.y < H + 20);
+
+  const target = speed();
+  for (const ball of balls) {
+    if (ball.stuck) { ball.x = paddle.x; ball.y = PY - BR - 1; continue; }
+    const cur = Math.hypot(ball.vx, ball.vy);
+    if (Math.abs(cur - target) > 1) { const f = 1 + (target / cur - 1) * Math.min(1, dt * 8); ball.vx *= f; ball.vy *= f; }
+    stepBall(ball, dt);
+  }
+  balls = balls.filter(b => b.y - BR <= H);
+  if (!bricks.some(b => !b.solid && b.hp > 0)) return win();
+  if (!balls.length) {
+    lives--; shake = 6; hud();
+    if (lives <= 0) return lose();
+    resetBall();
+  }
+}
+
+function stepBall(ball, dt) {
   const n = Math.ceil(Math.hypot(ball.vx, ball.vy) * dt / 4);
   for (let i = 0; i < n; i++) {
     ball.x += ball.vx * dt / n; ball.y += ball.vy * dt / n;
@@ -130,17 +194,14 @@ function step(dt) {
       else { ball.vy = dy > 0 ? Math.abs(ball.vy) : -Math.abs(ball.vy); ball.y += dy > 0 ? 1 : -1; }
       if (!b.solid) {
         b.hp--; score += 10 * b.max; shake = 2;
-        if (b.hp <= 0) burst(b.x + BW / 2, b.y + BH / 2, 8, css('--fg'));
+        if (b.hp <= 0) {
+          burst(b.x + BW / 2, b.y + BH / 2, 8, css('--fg'));
+          if (Math.random() < DROP_CHANCE) drops.push({ x: b.x + BW / 2, y: b.y + BH / 2, t: POWER_KEYS[Math.floor(Math.random() * POWER_KEYS.length)] });
+        }
         hud();
       }
       break;
     }
-  }
-  if (!bricks.some(b => !b.solid && b.hp > 0)) return win();
-  if (ball.y - BR > H) {
-    lives--; shake = 6; hud();
-    if (lives <= 0) return lose();
-    resetBall();
   }
 }
 
@@ -166,7 +227,7 @@ function lose() {
 
 /* ---------- render ---------- */
 function draw() {
-  const fg = css('--fg'), dim = css('--dim'), line = css('--line'), ac = css('--accent');
+  const fg = css('--fg'), dim = css('--dim'), line = css('--line'), ac = css('--accent'), bg = css('--bg');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cv.width, cv.height);
   const sx = shake ? (Math.random() - .5) * shake : 0, sy = shake ? (Math.random() - .5) * shake : 0;
@@ -175,15 +236,27 @@ function draw() {
   for (const b of bricks) {
     if (b.hp <= 0) continue;
     ctx.fillStyle = b.solid ? line : fg;
-    ctx.globalAlpha = b.solid ? 1 : 0.28 + 0.72 * (b.hp / 3);
+    ctx.globalAlpha = b.solid ? 1 : Math.min(1, 0.28 + 0.72 * (b.hp / 3));
     rr(b.x, b.y, BW, BH, 4); ctx.fill();
     if (b.solid) { ctx.strokeStyle = dim; ctx.globalAlpha = .6; ctx.lineWidth = 1; ctx.stroke(); }
   }
   ctx.globalAlpha = 1;
   for (const p of particles) { ctx.globalAlpha = Math.max(p.life, 0); ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, 2.5, 2.5); }
   ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const d of drops) {
+    ctx.fillStyle = ac; rr(d.x - 14, d.y - 9, 28, 18, 9); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '600 11px "Helvetica Neue",system-ui,sans-serif'; ctx.fillText(d.t, d.x, d.y + 1);
+  }
   ctx.fillStyle = fg; rr(paddle.x - paddle.w / 2, PY, paddle.w, PH, 5); ctx.fill();
-  ctx.fillStyle = ac; ctx.beginPath(); ctx.arc(ball.x, ball.y, BR, 0, 6.283); ctx.fill();
+  ctx.fillStyle = ac;
+  for (const ball of balls) { ctx.beginPath(); ctx.arc(ball.x, ball.y, BR, 0, 6.283); ctx.fill(); }
+
+  // active effects
+  ctx.textAlign = 'left'; ctx.fillStyle = dim; ctx.font = '600 10px "Helvetica Neue",system-ui,sans-serif';
+  let ty = H - 10;
+  for (const t of ['W', 'S']) if (fx[t] > 0) { ctx.fillText((POWERS[t].name + ' ' + Math.ceil(fx[t]) + 's').toUpperCase(), 6, ty); ty -= 14; }
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
 
