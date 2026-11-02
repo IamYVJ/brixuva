@@ -28,7 +28,7 @@ button:hover{border-color:var(--fg)}
 button.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 button.primary:hover{background:var(--accent);border-color:var(--accent);color:#fff}
 #levels{overflow-y:auto;justify-content:safe center}
-#grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:100%;max-width:340px;margin-bottom:14px}
+#grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;width:100%;max-width:380px;margin-bottom:14px}
 #grid button{min-width:0;padding:0;aspect-ratio:1;border-radius:14px;font-size:22px;font-weight:200;letter-spacing:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 #grid button small{font-size:9px;letter-spacing:.08em;color:var(--dim);font-weight:500}
@@ -36,6 +36,9 @@ button.primary:hover{background:var(--accent);border-color:var(--accent);color:#
 #grid button.cur{border-color:var(--accent)}
 #hint{position:absolute;bottom:10%;left:0;right:0;text-align:center;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);pointer-events:none;transition:opacity .3s}
 #hint.hide{opacity:0}
+#hint b{display:block;color:var(--fg);font-size:13px;letter-spacing:.26em;margin-bottom:8px}
+#btnMute{position:absolute;top:8px;right:48px;min-width:0;padding:6px 12px;font-size:14px;letter-spacing:0;z-index:4;border:none;color:var(--dim)}
+#btnMute.off{text-decoration:line-through;opacity:.45}
 #btnPause{position:absolute;top:8px;right:8px;min-width:0;padding:6px 12px;font-size:10px;letter-spacing:.1em;z-index:2;border:none;color:var(--dim)}
 #ver{text-align:center;font-size:10px;letter-spacing:.14em;color:var(--dim);padding:8px 0;opacity:.6}
 
